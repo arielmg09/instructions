@@ -175,7 +175,12 @@
     txt.textContent = r.label;
     labG.appendChild(txt);
   });
-
+  // position the needle pivot circles at the gauge center (they lack
+  // cx/cy in the markup, which defaulted them to the SVG origin)
+  document.getElementById("pivot").setAttribute("cx", cx);
+  document.getElementById("pivot").setAttribute("cy", cy);
+  document.getElementById("pivotDot").setAttribute("cx", cx);
+  document.getElementById("pivotDot").setAttribute("cy", cy);
   // center white face
   document.getElementById("centerFace").setAttribute(
     "d",
