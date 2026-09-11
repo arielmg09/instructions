@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Model Quality Score Gauge</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: #ffffff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 30px 20px 40px;
+    margin: 0;
+  }
+  #capture {
+    background: #ffffff;
+    padding: 10px 30px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 520px;
+  }
+  #valueBadge {
+    display: inline-block;
+    font-size: 20px;
+    font-weight: 700;
+    color: #ffffff;
+    background: #4CAF50;
+    padding: 5px 20px;
+    border-radius: 6px;
+    margin-top: 2px;
+    margin-bottom: 10px;
+    transition: background-color 0.15s ease;
+  }
+  h1 {
+    font-size: 26px;
+    font-weight: 800;
+    margin: 0 0 6px;
+    color: #1a1a1a;
+    text-align: center;
+  }
+  #gaugeWrap { position: relative; width: 460px; height: 285px; }
+  svg { display: block; }
+  .seg-label {
+    fill: #ffffff;
+    font-size: 16px;
+    font-weight: 700;
+    text-anchor: middle;
+    dominant-baseline: middle;
+    paint-order: stroke;
+    stroke: rgba(0,0,0,0.15);
+    stroke-width: 2px;
+  }
+  #ratingText {
+    font-size: 15px;
+    font-weight: 700;
+    text-anchor: middle;
+  }
+  .controls {
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #1a1a1a;
+  }
+  #scoreInput {
+    width: 90px;
+    font-size: 16px;
+    padding: 6px 8px;
+    border: 1px solid #999;
+    border-radius: 4px;
+    text-align: center;
+  }
+  .tip {
+    margin-top: 14px;
+    font-size: 12px;
+    color: #777;
+    text-align: center;
+  }
+  .no-print { }
+</style>
+</head>
+<body>
+
+  <div id="capture">
+    <h1>Model Quality Score</h1>
+    <div id="valueBadge">Good - 7.00</div>
+    <div id="gaugeWrap">
+      <svg id="gauge" viewBox="0 0 460 290" width="460" height="290">
+        <g id="segments"></g>
+        <path id="centerFace" d="" fill="#ffffff"></path>
+        <g id="labels"></g>
+        <g id="needle"></g>
+        <circle id="pivot" r="10" fill="#1a2740"></circle>
+        <circle id="pivotDot" r="4.5" fill="#3aa0e0"></circle>
+      </svg>
+    </div>
+
+    <div class="controls no-print">
+      <label for="scoreInput">Enter Value (7.00&nbsp;-&nbsp;30.00):</label>
+      <input id="scoreInput" type="number" min="7" max="30" step="0.01" value="7">
+    </div>
+  </div>
+
+  <div class="tip no-print">Tip: use your OS snipping tool (Win+Shift+S / Cmd+Shift+4) to copy the gauge above as an image into your slides.</div>
+
+<script>
+(function () {
+  // ---- Configuration -------------------------------------------------
+  const MIN = 7;
+  const MAX = 30;
+
+  // Ranges: lower bound included, upper bound excluded, except the last
+  // range which includes 30.
+  const ranges = [
+    { min: 7,  max: 11, label: "Good",     color: "#4CAF50" },
+    { min: 11, max: 16, label: "Average",  color: "#F2B705" },
+    { min: 16, max: 21, label: "Low",      color: "#E8720C" },
+    { min: 21, max: 25, label: "Very Low", color: "#E53935" },
+    { min: 25, max: 30, label: "Poor",     color: "#7B1113" }
+  ];
+
+  const cx = 230, cy = 245;
+  const rOuter = 215, rInner = 130;
+  const needleLen = rInner - 8;
+
+  // ---- Geometry helpers ------------------------------------------------
+  // theta: bearing angle, -90 = left (west), 0 = top (north), 90 = right (east)
+  function valueToTheta(v) {
+    const f = (v - MIN) / (MAX - MIN);
+    return -90 + f * 180;
+  }
+  function polar(r, thetaDeg) {
+    const t = thetaDeg * Math.PI / 180;
+    return { x: cx + r * Math.sin(t), y: cy - r * Math.cos(t) };
+  }
+  function ringSegmentPath(vA, vB, rO, rI) {
+    const tA = valueToTheta(vA);
+    const tB = valueToTheta(vB);
+    const oA = polar(rO, tA), oB = polar(rO, tB);
+    const iA = polar(rI, tA), iB = polar(rI, tB);
+    const largeArc = (tB - tA) > 180 ? 1 : 0;
+    return [
+      "M", oA.x, oA.y,
+      "A", rO, rO, 0, largeArc, 1, oB.x, oB.y,
+      "L", iB.x, iB.y,
+      "A", rI, rI, 0, largeArc, 0, iA.x, iA.y,
+      "Z"
+    ].join(" ");
+  }
+
+  // ---- Draw static segments & labels -----------------------------------
+  const segG = document.getElementById("segments");
+  const labG = document.getElementById("labels");
+
+  ranges.forEach(r => {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", ringSegmentPath(r.min, r.max, rOuter, rInner));
+    path.setAttribute("fill", r.color);
+    segG.appendChild(path);
+
+    const midVal = (r.min + r.max) / 2;
+    const midTheta = valueToTheta(midVal);
+    const midR = (rOuter + rInner) / 2;
+    const p = polar(midR, midTheta);
+    const txt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    txt.setAttribute("x", p.x);
+    txt.setAttribute("y", p.y);
+    txt.setAttribute("class", "seg-label");
+    txt.setAttribute("transform", `rotate(${midTheta}, ${p.x}, ${p.y})`);
+    txt.textContent = r.label;
+    labG.appendChild(txt);
+  });
+
+  // center white face
+  document.getElementById("centerFace").setAttribute(
+    "d",
+    `M ${cx - rInner} ${cy} A ${rInner} ${rInner} 0 0 1 ${cx + rInner} ${cy} L ${cx} ${cy} Z`
+  );
+
+  // ---- Needle + value update --------------------------------------------
+  const needleG = document.getElementById("needle");
+  const badge = document.getElementById("valueBadge");
+  const input = document.getElementById("scoreInput");
+
+  function ratingFor(v) {
+    for (const r of ranges) {
+      const inRange = (r.max === MAX) ? (v >= r.min && v <= r.max)
+                                       : (v >= r.min && v < r.max);
+      if (inRange) return r;
+    }
+    return v < MIN ? ranges[0] : ranges[ranges.length - 1];
+  }
+
+  function drawNeedle(v) {
+    const theta = valueToTheta(v);
+    const tip = polar(needleLen, theta);
+    const backTheta1 = theta + 90, backTheta2 = theta - 90;
+    const backW = 6;
+    const b1 = { x: cx + backW * Math.sin(backTheta1 * Math.PI / 180),
+                 y: cy - backW * Math.cos(backTheta1 * Math.PI / 180) };
+    const b2 = { x: cx + backW * Math.sin(backTheta2 * Math.PI / 180),
+                 y: cy - backW * Math.cos(backTheta2 * Math.PI / 180) };
+
+    needleG.innerHTML = "";
+    const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+    poly.setAttribute("points", `${tip.x},${tip.y} ${b1.x},${b1.y} ${b2.x},${b2.y}`);
+    poly.setAttribute("fill", "#1a2740");
+    needleG.appendChild(poly);
+  }
+
+  function update() {
+    let v = parseFloat(input.value);
+    if (isNaN(v)) v = MIN;
+    v = Math.min(MAX, Math.max(MIN, v));
+    v = Math.round(v * 100) / 100;
+
+    drawNeedle(v);
+
+    const rating = ratingFor(v);
+
+    badge.textContent = `${rating.label} - ${v.toFixed(2)}`;
+    badge.style.backgroundColor = rating.color;
+
+    let ratingEl = document.getElementById("ratingText");
+    if (!ratingEl) {
+      ratingEl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      ratingEl.setAttribute("id", "ratingText");
+      ratingEl.setAttribute("x", cx);
+      ratingEl.setAttribute("y", cy + 26);
+      document.getElementById("gauge").appendChild(ratingEl);
+    }
+    ratingEl.setAttribute("fill", rating.color);
+    ratingEl.textContent = rating.label;
+  }
+
+  input.addEventListener("input", update);
+  update();
+})();
+</script>
+</body>
+</html>
